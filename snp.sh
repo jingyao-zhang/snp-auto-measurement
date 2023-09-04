@@ -195,6 +195,8 @@ install_dependencies() {
     return 0
   fi
 
+  sudo apt update
+
   # Build dependencies
   sudo apt install -y build-essential git
 
