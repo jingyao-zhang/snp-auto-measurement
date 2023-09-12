@@ -54,6 +54,7 @@ chmod +x snp.sh
 
 Setup the host by building SNP patched versions of qemu, ovmf and the linux kernel:
 ```
+./qemu-conf.sh
 ./snp.sh setup-host
 ```
 
@@ -144,3 +145,12 @@ by exporting HOST_SSH_PORT.
 
 'amd' is the default user to access the guest. This can be changed by exporting 
 GUEST_USER.
+
+## Generating the Golden Measurement
+
+Automatic measurement tool is provided with the following command:
+```
+./cal-measurement.sh
+```
+
+The golden measurement of kernel, image, firmware is stored in `output.txt`.
