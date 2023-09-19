@@ -149,7 +149,7 @@ GUEST_USER.
 
 Automatic measurement tool is provided with the following command:
 ```
-./qemu-conf.sh
+chmod +x cal-measurement.sh
 ./cal-measurement.sh
 ```
 
