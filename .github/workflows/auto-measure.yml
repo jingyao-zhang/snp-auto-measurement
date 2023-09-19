@@ -1,0 +1,31 @@
+name: Create Release and Publish Files
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  publish:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Make snp.sh executable and run
+      run: |
+        sudo chmod +x snp.sh
+        sudo ./snp.sh build-guest --non-upm
+
+    - name: Make cal-measurement.sh executable and run
+      run: |
+        sudo chmod +x cal-measurement.sh
+        ./cal-measurement.sh
+
+    - name: Upload files to a GitHub release
+      uses: svenstaro/upload-release-action@2.7.0
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ./output.txt
+        asset_name: output.txt
+        tag: ${{ github.ref }}
