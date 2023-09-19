@@ -1111,17 +1111,17 @@ main() {
       ;;
     
     build-guest)
-      # install_dependencies
+      install_dependencies
 
-      # if $UPM; then
-      #   build_and_install_amdsev "${AMDSEV_DEFAULT_BRANCH}"
-      # else
-      #   build_and_install_amdsev "${AMDSEV_NON_UPM_BRANCH}"
-      # fi
-      # if [ ! -d "${SETUP_WORKING_DIR}" ]; then
-      #   echo -e "Setup directory does not exist, please run 'setup-host' prior to 'launch-guest'"
-      #   return 1
-      # fi
+      if $UPM; then
+        build_and_install_amdsev "${AMDSEV_DEFAULT_BRANCH}"
+      else
+        build_and_install_amdsev "${AMDSEV_NON_UPM_BRANCH}"
+      fi
+      if [ ! -d "${SETUP_WORKING_DIR}" ]; then
+        echo -e "Setup directory does not exist, please run 'setup-host' prior to 'launch-guest'"
+        return 1
+      fi
       source "${SETUP_WORKING_DIR}/source-bins"
 
       setup_guest
