@@ -65,6 +65,8 @@ set -o pipefail
 
 trap cleanup EXIT
 
+source ./qemu-conf.sh
+
 # Working directory setup
 # WORKING_DIR="${WORKING_DIR:-$HOME/snp}"
 WORKING_DIR="$PWD/snp"
@@ -109,6 +111,7 @@ usage() {
   >&2 echo "  where COMMAND must be one of the following:"
   >&2 echo "    setup-host            Build required SNP components and set up host"
   >&2 echo "    launch-guest          Launch a SNP guest"
+  >&2 echo "    build-guest           Setup a SNP guest"
   >&2 echo "    attest-guest          Use virtee/snpguest and sev-snp-measure to attest a SNP guest"
   >&2 echo "    stop-guests           Stop all SNP guests started by this script"
   >&2 echo "  where OPTIONS are:"
@@ -498,6 +501,9 @@ build_base_qemu_cmdline() {
   # Base cmdline
   echo -n "sudo ${qemu_bin} " > "${QEMU_CMDLINE_FILE}"
   add_qemu_cmdline_opts "--enable-kvm"
+  # echo "Debug: QEMU_CPU_MODEL is ${QEMU_CPU_MODEL}"
+  # echo "Debug: QEMU_CPU_NUM is ${QEMU_CPU_NUM}"
+  # echo "Debug: QEMU_MEMORY_CAPACITY is ${QEMU_MEMORY_CAPACITY}"
   add_qemu_cmdline_opts "-cpu ${QEMU_CPU_MODEL}"
   add_qemu_cmdline_opts "-smp ${QEMU_CPU_NUM}"
   add_qemu_cmdline_opts "-m ${QEMU_MEMORY_CAPACITY}"
@@ -662,6 +668,91 @@ setup_and_launch_guest() {
 
   # Launch qemu cmdline
   "${QEMU_CMDLINE_FILE}"
+}
+
+setup_guest() {
+  # Return error if user specified file that doesn't exist
+  if [ ! -f "${IMAGE}" ] && ${SKIP_IMAGE_CREATE}; then
+    >&2 echo -e "Image file specified, but doesn't exist"
+    return 1
+  fi
+
+  # Create directory
+  mkdir -p "${LAUNCH_WORKING_DIR}"
+
+  # Build base qemu cmdline and add direct boot bins
+  build_base_qemu_cmdline "${QEMU_BIN}"
+
+  # echo "GUEST_SIZE_GB is set to: ${GUEST_SIZE_GB}"
+
+  # If the image file doesn't exist, setup
+  if [ ! -f "${IMAGE}" ]; then
+    generate_guest_ssh_keypair
+    cloud_init_create_data
+    
+    # virt-resize currently does not work with cloud-init images
+    # It changes the partition names and grub gets messed up
+    #resize_guest
+
+    # For the cloud-init image, just resize the image
+    qemu-img resize "${LAUNCH_WORKING_DIR}/${GUEST_NAME}.img" "${GUEST_SIZE_GB}G"
+
+    # Add seed image option to qemu cmdline
+    add_qemu_cmdline_opts "-device scsi-hd,drive=disk1"
+    add_qemu_cmdline_opts "-drive if=none,id=disk1,format=raw,file=${LAUNCH_WORKING_DIR}/${GUEST_NAME}-seed.img"
+  fi
+
+  local guest_kernel_installed_file="${LAUNCH_WORKING_DIR}/guest_kernel_already_installed"
+  # echo "GUEST_SIZE_GB is set to: ${GUEST_SIZE_GB}"
+  if [ ! -f "${guest_kernel_installed_file}" ]; then
+    # Launch qemu cmdline
+    # echo "QEMU_CMDLINE_FILE: ${QEMU_CMDLINE_FILE}"
+    "${QEMU_CMDLINE_FILE}"
+    # echo "QEMU_CMDLINE_FILE: ${QEMU_CMDLINE_FILE}"
+
+    # Install the guest kernel, retrieve the initrd and then reboot
+    local guest_kernel=$(echo $(realpath "${SETUP_WORKING_DIR}/AMDSEV/linux/guest/debian/linux-image/boot/vmlinuz*"))
+    local guest_kernel_version=$(echo "${guest_kernel}" | sed "s|.*/boot/vmlinuz-\(.*\)|\1|g")
+    local guest_kernel_deb=$(echo "$(realpath ${SETUP_WORKING_DIR}/AMDSEV/linux/linux-image*snp-guest*.deb)" | grep -v dbg)
+    local guest_initrd_basename="initrd.img-${guest_kernel_version}"
+    wait_and_retry_command "scp_guest_command ${guest_kernel_deb} ${GUEST_USER}@localhost:/home/${GUEST_USER}"
+    ssh_guest_command "sudo dpkg -i /home/${GUEST_USER}/$(basename ${guest_kernel_deb})"
+    scp_guest_command "${GUEST_USER}@localhost:/boot/${guest_initrd_basename}" "${SETUP_WORKING_DIR}"
+    ssh_guest_command "sudo shutdown now" || true
+    echo "true" > "${guest_kernel_installed_file}"
+
+    # A few seconds for shutdown to complete
+    sleep 3
+
+    # Call the launch-guest again now that the image is prepped
+    setup_guest
+    return 0
+  fi
+
+  # Add sev-guest module to host generated initrd
+  # To be used as the guest initrd
+  # NO LONGER NEEDED: initrd built after kernel generation (build_guest_initrd)
+  #initrd_add_sev_guest_module "${INITRD_BIN}"
+
+  if $UPM; then
+    add_qemu_cmdline_opts "-machine confidential-guest-support=sev0,memory-backend=ram1,kvm-type=protected"
+    add_qemu_cmdline_opts "-object memory-backend-memfd-private,id=ram1,size=1G,share=true"
+  else
+    add_qemu_cmdline_opts "-machine memory-encryption=sev0,vmport=off"
+  fi
+
+  # qemu 7.2 issue: pc-q35-7.1
+  # snp object and kernel-hashes on
+  # ovmf, initrd, kernel and append options
+  add_qemu_cmdline_opts "-machine pc-q35-7.1"
+  add_qemu_cmdline_opts "-object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,kernel-hashes=on"
+  add_qemu_cmdline_opts "-drive if=pflash,format=raw,readonly=on,file=${OVMF_BIN}"
+  add_qemu_cmdline_opts "-initrd ${INITRD_BIN}"
+  add_qemu_cmdline_opts "-kernel ${KERNEL_BIN}"
+  add_qemu_cmdline_opts "-append \"${GUEST_KERNEL_APPEND}\""
+
+  # Launch qemu cmdline
+  # "${QEMU_CMDLINE_FILE}"
 }
 
 ssh_guest_command() {
@@ -950,6 +1041,11 @@ main() {
         COMMAND="launch-guest"
         shift
         ;;
+      
+      build-guest)
+        COMMAND="build-guest"
+        shift
+        ;;
 
       attest-guest)
         COMMAND="attest-guest"
@@ -1012,6 +1108,23 @@ main() {
       install_dependencies
       setup_and_launch_guest
       wait_and_retry_command verify_snp_guest
+      ;;
+    
+    build-guest)
+      # install_dependencies
+
+      # if $UPM; then
+      #   build_and_install_amdsev "${AMDSEV_DEFAULT_BRANCH}"
+      # else
+      #   build_and_install_amdsev "${AMDSEV_NON_UPM_BRANCH}"
+      # fi
+      # if [ ! -d "${SETUP_WORKING_DIR}" ]; then
+      #   echo -e "Setup directory does not exist, please run 'setup-host' prior to 'launch-guest'"
+      #   return 1
+      # fi
+      source "${SETUP_WORKING_DIR}/source-bins"
+
+      setup_guest
       ;;
 
     attest-guest)
