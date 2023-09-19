@@ -54,7 +54,6 @@ chmod +x snp.sh
 
 Setup the host by building SNP patched versions of qemu, ovmf and the linux kernel:
 ```
-source qemu-conf.sh
 ./snp.sh setup-host
 ```
 
