@@ -611,8 +611,8 @@ build_guest_amdsev() {
 
   # Build and copy files
   ./build.sh ovmf
-  ./build.sh kernel guest
-  ./build.sh --package
+  ./build.sh --package kernel guest
+  # ./build.sh --package
   # sudo cp kvm.conf /etc/modprobe.d/
   
   # # Install
