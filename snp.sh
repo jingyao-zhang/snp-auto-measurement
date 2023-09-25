@@ -590,6 +590,47 @@ build_and_install_amdsev() {
   save_binary_paths
 }
 
+build_guest_amdsev() {
+  local amdsev_branch="${1:-${AMDSEV_DEFAULT_BRANCH}}"
+
+  # Create directory
+  mkdir -p "${SETUP_WORKING_DIR}"
+  
+  # Clone and switch branch
+  pushd "${SETUP_WORKING_DIR}" >/dev/null
+  if [ ! -d "AMDSEV" ]; then
+    git clone -b "${amdsev_branch}" "${AMDSEV_URL}" "AMDSEV"
+    git -C "AMDSEV" remote add current "${AMDSEV_URL}"
+  fi
+
+  # Fetch, checkout, update
+  cd "AMDSEV"
+  git remote set-url current "${AMDSEV_URL}"
+  git fetch current "${amdsev_branch}"
+  git checkout "current/${amdsev_branch}"
+
+  # Build and copy files
+  ./build.sh ovmf
+  ./build.sh kernel guest
+  ./build.sh --package
+  # sudo cp kvm.conf /etc/modprobe.d/
+  
+  # # Install
+  # cd $(ls -d snp-release-* | head -1)
+  # sudo ./install.sh
+  
+  popd >/dev/null
+
+  # dracut initrd build is not working currently
+  # Devices are failing to mount using the dracut built initrd
+  # This step replaced by steps to install kernel and initrd in the guest during launch
+  # Build the guest binary from the guest kernel
+  #build_guest_initrd
+
+  # Save binary paths in source file
+  save_binary_paths
+}
+
 setup_and_launch_guest() {
   # Return error if user specified file that doesn't exist
   if [ ! -f "${IMAGE}" ] && ${SKIP_IMAGE_CREATE}; then
@@ -1114,9 +1155,9 @@ main() {
       install_dependencies
 
       if $UPM; then
-        build_and_install_amdsev "${AMDSEV_DEFAULT_BRANCH}"
+        build_guest_amdsev "${AMDSEV_DEFAULT_BRANCH}"
       else
-        build_and_install_amdsev "${AMDSEV_NON_UPM_BRANCH}"
+        build_guest_amdsev "${AMDSEV_NON_UPM_BRANCH}"
       fi
       if [ ! -d "${SETUP_WORKING_DIR}" ]; then
         echo -e "Setup directory does not exist, please run 'setup-host' prior to 'launch-guest'"
