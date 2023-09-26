@@ -81,6 +81,10 @@ If you only need to build the guest OVMF, kernel, and image, use the following c
 ./snp.sh build-guest
 ```
 
+Note that only buiding OVM, guest kernel and image does not require KVM supported. 
+
+This command is also used in Github Actions for automatic measurement calculation.
+
 ### Launching a Guest
 
 To launch a guest with the default UPM-enabled version of the kernel:
