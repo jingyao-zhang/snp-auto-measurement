@@ -140,6 +140,10 @@ cleanup() {
         #cat ${LAUNCH_WORKING_DIR}/*.log 2>/dev/null
         cat ${LAUNCH_WORKING_DIR}/qemu-trace.log 2>/dev/null
         ;;
+      
+      build_guest)
+        cat ${LAUNCH_WORKING_DIR}/qemu-trace.log 2>/dev/null
+        ;;
 
       attest-guest)
         cat ${ATTESTATION_WORKING_DIR}/*.log 2>/dev/null
@@ -610,14 +614,15 @@ build_guest_amdsev() {
   git checkout "current/${amdsev_branch}"
 
   # Build and copy files
+  ./build.sh qemu
   ./build.sh ovmf
   ./build.sh --package kernel guest
   # ./build.sh --package
-  # sudo cp kvm.conf /etc/modprobe.d/
+  sudo cp kvm.conf /etc/modprobe.d/
   
-  # # Install
-  # cd $(ls -d snp-release-* | head -1)
-  # sudo ./install.sh
+  # Install
+  cd $(ls -d snp-release-* | head -1)
+  sudo ./install.sh
   
   popd >/dev/null
 
@@ -744,31 +749,6 @@ setup_guest() {
   fi
 
   local guest_kernel_installed_file="${LAUNCH_WORKING_DIR}/guest_kernel_already_installed"
-  # echo "GUEST_SIZE_GB is set to: ${GUEST_SIZE_GB}"
-  if [ ! -f "${guest_kernel_installed_file}" ]; then
-    # Launch qemu cmdline
-    # echo "QEMU_CMDLINE_FILE: ${QEMU_CMDLINE_FILE}"
-    "${QEMU_CMDLINE_FILE}"
-    # echo "QEMU_CMDLINE_FILE: ${QEMU_CMDLINE_FILE}"
-
-    # Install the guest kernel, retrieve the initrd and then reboot
-    local guest_kernel=$(echo $(realpath "${SETUP_WORKING_DIR}/AMDSEV/linux/guest/debian/linux-image/boot/vmlinuz*"))
-    local guest_kernel_version=$(echo "${guest_kernel}" | sed "s|.*/boot/vmlinuz-\(.*\)|\1|g")
-    local guest_kernel_deb=$(echo "$(realpath ${SETUP_WORKING_DIR}/AMDSEV/linux/linux-image*snp-guest*.deb)" | grep -v dbg)
-    local guest_initrd_basename="initrd.img-${guest_kernel_version}"
-    wait_and_retry_command "scp_guest_command ${guest_kernel_deb} ${GUEST_USER}@localhost:/home/${GUEST_USER}"
-    ssh_guest_command "sudo dpkg -i /home/${GUEST_USER}/$(basename ${guest_kernel_deb})"
-    scp_guest_command "${GUEST_USER}@localhost:/boot/${guest_initrd_basename}" "${SETUP_WORKING_DIR}"
-    ssh_guest_command "sudo shutdown now" || true
-    echo "true" > "${guest_kernel_installed_file}"
-
-    # A few seconds for shutdown to complete
-    sleep 3
-
-    # Call the launch-guest again now that the image is prepped
-    setup_guest
-    return 0
-  fi
 
   # Add sev-guest module to host generated initrd
   # To be used as the guest initrd
